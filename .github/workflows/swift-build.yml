@@ -27,24 +27,6 @@ jobs:
         working-directory: ./graphiti-swift
         run: swift test
 
-      - name: Build documentation
-        working-directory: ./graphiti-swift
-        run: |
-          swift package \
-            --allow-writing-to-directory ./docs \
-            generate-documentation \
-            --target GraphitiClient \
-            --output-path ./docs \
-            --transform-for-static-hosting \
-            --hosting-base-path graphiti
-
-      - name: Upload documentation
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: swift-docs
-          path: graphiti-swift/docs/
-
   build-linux:
     runs-on: ubuntu-latest
     container:
