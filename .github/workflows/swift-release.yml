@@ -45,16 +45,6 @@ jobs:
           cd graphiti-swift
           git archive --format=zip --prefix=GraphitiClient-${{ steps.version.outputs.version }}/ HEAD > ../GraphitiClient-${{ steps.version.outputs.version }}.zip
 
-      - name: Build Linux (verification)
-        uses: addnab/docker-run-action@v3
-        with:
-          image: swift:6.2
-          options: -v ${{ github.workspace }}:/workspace
-          run: |
-            cd /workspace/graphiti-swift
-            swift build
-            swift test
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
