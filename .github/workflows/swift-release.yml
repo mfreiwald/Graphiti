@@ -40,20 +40,6 @@ jobs:
         working-directory: ./graphiti-swift
         run: swift test
 
-      - name: Build documentation
-        working-directory: ./graphiti-swift
-        run: |
-          swift package --allow-writing-to-directory ./docs \
-            generate-documentation --target GraphitiClient \
-            --disable-indexing \
-            --transform-for-static-hosting \
-            --hosting-base-path graphiti-swift \
-            --output-path ./docs
-
-      - name: Create documentation archive
-        working-directory: ./graphiti-swift
-        run: tar -czf GraphitiClient-docs-${{ steps.version.outputs.version }}.tar.gz docs/
-
       - name: Create source archive
         run: |
           cd graphiti-swift
@@ -118,7 +104,6 @@ jobs:
 
             ### Documentation
             - [README](./graphiti-swift/README.md)
-            - [API Documentation](./graphiti-swift/docs/) (download docs archive)
             - [Examples](./graphiti-swift/Examples/)
 
             ### Changes
@@ -127,4 +112,3 @@ jobs:
           prerelease: false
           files: |
             GraphitiClient-${{ steps.version.outputs.version }}.zip
-            graphiti-swift/GraphitiClient-docs-${{ steps.version.outputs.version }}.tar.gz
