@@ -1,6 +1,10 @@
 import Foundation
 import HTTPTypes
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// Main client for interacting with Graphiti REST API
 public actor GraphitiClient {
     private let transport: HTTPTransport
