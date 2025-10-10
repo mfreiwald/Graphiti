@@ -38,7 +38,7 @@ public final class AsyncHTTPClientTransport: HTTPTransport {
 
         // Set body if present
         if let body {
-            ahcRequest.body = .bytes(ByteBuffer(data: body))
+            ahcRequest.body = .bytes(ByteBuffer(bytes: body))
         }
 
         do {
