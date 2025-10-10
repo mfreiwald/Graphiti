@@ -1,0 +1,61 @@
+name: Build Swift SDK
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'graphiti-swift/**'
+      - '.github/workflows/swift-build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'graphiti-swift/**'
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-26
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build
+        working-directory: ./graphiti-swift
+        run: swift build -c release
+
+      - name: Run tests
+        working-directory: ./graphiti-swift
+        run: swift test
+
+      - name: Build documentation
+        working-directory: ./graphiti-swift
+        run: |
+          swift package --allow-writing-to-directory ./docs \
+            generate-documentation --target GraphitiClient \
+            --disable-indexing \
+            --transform-for-static-hosting \
+            --hosting-base-path graphiti \
+            --output-path ./docs
+
+      - name: Upload documentation
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-docs
+          path: graphiti-swift/docs/
+
+  build-linux:
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build
+        working-directory: ./graphiti-swift
+        run: swift build -c release
+
+      - name: Run tests
+        working-directory: ./graphiti-swift
+        run: swift test

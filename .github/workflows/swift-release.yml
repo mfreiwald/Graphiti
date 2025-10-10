@@ -1,0 +1,130 @@
+name: Release Swift SDK
+
+on:
+  push:
+    tags:
+      - 'swift/v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: macos-26
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/swift/v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=swift/v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build release
+        working-directory: ./graphiti-swift
+        run: swift build -c release
+
+      - name: Run tests
+        working-directory: ./graphiti-swift
+        run: swift test
+
+      - name: Build documentation
+        working-directory: ./graphiti-swift
+        run: |
+          swift package --allow-writing-to-directory ./docs \
+            generate-documentation --target GraphitiClient \
+            --disable-indexing \
+            --transform-for-static-hosting \
+            --hosting-base-path graphiti-swift \
+            --output-path ./docs
+
+      - name: Create documentation archive
+        working-directory: ./graphiti-swift
+        run: tar -czf GraphitiClient-docs-${{ steps.version.outputs.version }}.tar.gz docs/
+
+      - name: Create source archive
+        run: |
+          cd graphiti-swift
+          git archive --format=zip --prefix=GraphitiClient-${{ steps.version.outputs.version }}/ HEAD > ../GraphitiClient-${{ steps.version.outputs.version }}.zip
+
+      - name: Build Linux (verification)
+        uses: addnab/docker-run-action@v3
+        with:
+          image: swift:6.2
+          options: -v ${{ github.workspace }}:/workspace
+          run: |
+            cd /workspace/graphiti-swift
+            swift build
+            swift test
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Swift SDK v${{ steps.version.outputs.version }}
+          body: |
+            ## GraphitiClient Swift SDK v${{ steps.version.outputs.version }}
+
+            ### Installation
+
+            #### Swift Package Manager
+            Add to your `Package.swift`:
+            ```swift
+            dependencies: [
+                .package(url: "https://github.com/${{ github.repository }}", from: "${{ steps.version.outputs.version }}")
+            ]
+            ```
+
+            #### Xcode
+            File → Add Package Dependencies → Enter repository URL
+
+            ### Platforms
+            - macOS 26+
+            - iOS 26+
+            - watchOS 26+
+            - tvOS 26+
+            - visionOS 26+
+            - Linux (Swift 6.2+)
+
+            ### Quick Start
+            ```swift
+            import GraphitiClient
+
+            let client = GraphitiClient(
+                baseURL: URL(string: "http://localhost:8000")!
+            )
+
+            let request = AddMemoryRequest(
+                name: "Meeting Notes",
+                episodeBody: "Discussed the project...",
+                groupId: "my-kb",
+                source: .text
+            )
+
+            let response = try await client.addMemory(request)
+            ```
+
+            ### Documentation
+            - [README](./graphiti-swift/README.md)
+            - [API Documentation](./graphiti-swift/docs/) (download docs archive)
+            - [Examples](./graphiti-swift/Examples/)
+
+            ### Changes
+            See [graphiti-swift/README.md](./graphiti-swift/README.md) for full documentation.
+          draft: false
+          prerelease: false
+          files: |
+            GraphitiClient-${{ steps.version.outputs.version }}.zip
+            graphiti-swift/GraphitiClient-docs-${{ steps.version.outputs.version }}.tar.gz

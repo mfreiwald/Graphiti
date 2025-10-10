@@ -1,0 +1,69 @@
+services:
+  neo4j:
+    image: neo4j:5.26.0
+    container_name: graphiti-neo4j-rest
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    volumes:
+      - neo4j_data_rest:/data
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-demodemo}
+      - NEO4J_server_memory_heap_initial__size=512m
+      - NEO4J_server_memory_heap_max__size=2G
+      - NEO4J_server_memory_pagecache_size=512m
+      - NEO4J_db_tx__log_rotation_retention__policy=1 days
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - graphiti-rest-network
+
+  graphiti-rest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: graphiti-rest-server
+    ports:
+      - "8000:8000"
+    environment:
+      # OpenAI Configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - MODEL_NAME=${MODEL_NAME:-gpt-4o-mini}
+      - SMALL_MODEL_NAME=${SMALL_MODEL_NAME:-gpt-4.1-nano}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.7}
+      - EMBEDDER_MODEL_NAME=${EMBEDDER_MODEL_NAME:-text-embedding-3-small}
+
+      # Neo4j Configuration
+      - NEO4J_URI=${NEO4J_URI:-bolt://neo4j:7687}
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-demodemo}
+
+      # Server Configuration
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+
+      # Performance Configuration
+      - SEMAPHORE_LIMIT=${SEMAPHORE_LIMIT:-10}
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    networks:
+      - graphiti-rest-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthcheck || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  neo4j_data_rest:
+
+networks:
+  graphiti-rest-network:
+    driver: bridge
