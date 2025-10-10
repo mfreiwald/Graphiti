@@ -21,6 +21,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.3.0"),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.23.0"),
+        .package(url: "https://github.com/apple/swift-docdocc-plugin", from: "1.0.0"),
     ],
     targets: [
         .target(

@@ -30,12 +30,13 @@ jobs:
       - name: Build documentation
         working-directory: ./graphiti-swift
         run: |
-          swift package --allow-writing-to-directory ./docs \
-            generate-documentation --target GraphitiClient \
-            --disable-indexing \
+          swift package \
+            --allow-writing-to-directory ./docs \
+            generate-documentation \
+            --target GraphitiClient \
+            --output-path ./docs \
             --transform-for-static-hosting \
-            --hosting-base-path graphiti \
-            --output-path ./docs
+            --hosting-base-path graphiti
 
       - name: Upload documentation
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
