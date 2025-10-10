@@ -57,8 +57,7 @@ public final class AsyncHTTPClientTransport: HTTPTransport {
                 httpResponse.headerFields[HTTPField.Name(header.name)!] = header.value
             }
 
-            // Convert ByteBuffer to Data
-            let responseData = responseBody.getData(at: 0, length: responseBody.readableBytes) ?? Data()
+            let responseData = Data(responseBody.readableBytesView)
             return (responseData, httpResponse)
         } catch let error as HTTPClientError where error == .cancelled {
             throw GraphitiError.cancelled
