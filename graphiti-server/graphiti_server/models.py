@@ -81,6 +81,14 @@ class SuccessResponse(BaseModel):
     success: bool = True
 
 
+class AddMemoryResponse(BaseModel):
+    """Response model for add_memory endpoint."""
+
+    message: str
+    episode_uuid: str
+    success: bool = True
+
+
 class ErrorResponse(BaseModel):
     """Generic error response."""
 

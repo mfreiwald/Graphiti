@@ -53,11 +53,32 @@ public actor GraphitiClient {
 
     // MARK: - Memory Operations
 
-    /// Add an episode to memory
+    /// Add an episode to memory asynchronously (queued)
+    /// - Returns: Success response with queue position
+    /// - Note: This endpoint queues the episode for background processing and returns immediately
     public func addMemory(_ request: AddMemoryRequest) async throws(GraphitiError) -> SuccessResponse {
         let httpRequest = try requestBuilder.buildRequest(
             method: .post,
             path: "/api/v1/memory"
+        )
+
+        let body: Data
+        do {
+            body = try encoder.encode(request)
+        } catch {
+            throw .encodingError(error)
+        }
+
+        return try await executeRequest(httpRequest, body: body)
+    }
+
+    /// Add an episode to memory synchronously
+    /// - Returns: Response with episode UUID
+    /// - Note: This endpoint processes the episode immediately and waits for completion
+    public func addMemorySync(_ request: AddMemoryRequest) async throws(GraphitiError) -> AddMemoryResponse {
+        let httpRequest = try requestBuilder.buildRequest(
+            method: .post,
+            path: "/api/v1/memory/sync"
         )
 
         let body: Data

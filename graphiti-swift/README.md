@@ -34,7 +34,7 @@ let client = GraphitiClient(
     baseURL: URL(string: "http://localhost:8000")!
 )
 
-// Add a memory
+// Add a memory (async - queued, returns immediately)
 let request = AddMemoryRequest(
     name: "Meeting Notes",
     episodeBody: "Had a great meeting with Sarah about the project.",
@@ -43,7 +43,12 @@ let request = AddMemoryRequest(
 )
 
 let response = try await client.addMemory(request)
-print(response.message)
+print(response.message) // "Episode 'Meeting Notes' queued for processing..."
+
+// Add a memory (sync - get episode UUID immediately)
+let syncResponse = try await client.addMemorySync(request)
+print(syncResponse.episodeUuid) // "550e8400-e29b-41d4-a716-446655440000"
+print(syncResponse.message) // "Episode 'Meeting Notes' processed successfully"
 ```
 
 #### Using AsyncHTTPClient (Linux/Server)
@@ -98,14 +103,25 @@ for fact in factResults.facts {
 #### Episode Management
 
 ```swift
+// Add episode and get UUID for later reference
+let request = AddMemoryRequest(
+    name: "Important Meeting",
+    episodeBody: "Critical decision made.",
+    groupId: "my-kb",
+    source: .text
+)
+
+let response = try await client.addMemorySync(request)
+let episodeUuid = response.episodeUuid
+
 // Get recent episodes
 let episodes = try await client.getEpisodes(
     groupId: "my-knowledge-base",
     lastN: 10
 )
 
-// Delete an episode
-try await client.deleteEpisode(uuid: "episode-uuid")
+// Delete the episode we just created
+try await client.deleteEpisode(uuid: episodeUuid)
 
 // Get entity edge
 let edge = try await client.getEntityEdge(uuid: "edge-uuid")
@@ -168,12 +184,49 @@ let client = GraphitiClient(
 )
 ```
 
+### API Methods
+
+#### Memory Operations
+
+- **`addMemory(_:)`** - Add episode asynchronously (returns immediately, queued)
+  - Returns: `SuccessResponse` with queue position
+  - Use for: High-throughput, fire-and-forget operations
+
+- **`addMemorySync(_:)`** - Add episode synchronously (waits for completion)
+  - Returns: `AddMemoryResponse` with episode UUID
+  - Use for: When you need the UUID immediately for tracking/deletion
+
+- **`getEpisodes(groupId:lastN:)`** - Get recent episodes
+- **`deleteEpisode(uuid:)`** - Delete an episode
+
+#### Search Operations
+
+- **`searchNodes(query:groupIds:maxNodes:centerNodeUuid:entity:)`** - Search for entity nodes
+- **`searchFacts(query:groupIds:maxFacts:centerNodeUuid:)`** - Search for facts/relationships
+
+#### Entity Edge Operations
+
+- **`getEntityEdge(uuid:)`** - Get entity edge by UUID
+- **`deleteEntityEdge(uuid:)`** - Delete entity edge
+
+#### Admin Operations
+
+- **`getStatus()`** - Get server status and configuration
+- **`clearGraph()`** - Clear all data (use with caution!)
+- **`healthCheck()`** - Check if server is healthy
+
 ### Architecture
 
 ```
 GraphitiClient/
 ├── Models/
 │   └── GraphitiModels.swift       # Request/Response types
+│       ├── AddMemoryRequest       # Request for adding episodes
+│       ├── SuccessResponse        # Generic success (async endpoint)
+│       ├── AddMemoryResponse      # Response with episode UUID (sync endpoint)
+│       ├── NodeResult             # Entity node result
+│       ├── FactResult             # Fact/relationship result
+│       └── ...
 ├── Core/
 │   └── GraphitiError.swift        # Error types
 ├── Transport/

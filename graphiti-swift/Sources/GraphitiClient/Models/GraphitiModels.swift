@@ -63,6 +63,19 @@ public struct SuccessResponse: Sendable, Codable {
     public let success: Bool
 }
 
+/// Response for add_memory endpoint with episode UUID
+public struct AddMemoryResponse: Sendable, Codable {
+    public let message: String
+    public let episodeUuid: String
+    public let success: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case message
+        case episodeUuid = "episode_uuid"
+        case success
+    }
+}
+
 /// Generic error response
 public struct ErrorResponse: Sendable, Codable, Error {
     public let error: String

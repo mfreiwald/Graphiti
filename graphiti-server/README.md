@@ -35,11 +35,11 @@ docker compose up
 
 All endpoints are prefixed with `/api/v1`.
 
-### 1. Add Memory (Episode)
+### 1. Add Memory (Episode) - Async
 
 **Endpoint:** `POST /api/v1/memory`
 
-**Description:** Add an episode to the knowledge graph. Returns immediately and processes in the background.
+**Description:** Add an episode to the knowledge graph asynchronously. Returns immediately and processes in the background queue.
 
 **Request Body:**
 ```json
@@ -58,7 +58,7 @@ All endpoints are prefixed with `/api/v1`.
 - `source` (enum, optional): "text" | "json" | "message" (default: "text")
 - `source_description` (string, optional): Description of the source
 - `group_id` (string, optional): Group ID for namespace isolation
-- `uuid` (string, optional): Custom UUID for the episode
+- `uuid` (string, optional): Custom UUID for the episode (not recommended for new episodes)
 
 **Response:** `202 Accepted`
 ```json
@@ -68,10 +68,56 @@ All endpoints are prefixed with `/api/v1`.
 }
 ```
 
+**When to use:**
+- High-throughput scenarios where you don't need immediate confirmation
+- When episode UUID is not needed in the response
+- Fire-and-forget operations
+
+---
+
+### 1b. Add Memory (Episode) - Sync
+
+**Endpoint:** `POST /api/v1/memory/sync`
+
+**Description:** Add an episode to the knowledge graph synchronously. Queues the episode (maintaining correct order) and waits for processing to complete before returning the episode UUID.
+
+**Important:** Both `/memory` and `/memory/sync` use the same queue to ensure episodes are processed in the correct order. The difference is:
+- `/memory` returns immediately after queuing (fire-and-forget)
+- `/memory/sync` waits for the result and returns the episode UUID
+
+**Request Body:**
+```json
+{
+  "name": "Meeting Notes",
+  "episode_body": "Had a meeting with Sarah about the GraphDB project...",
+  "source": "text",
+  "source_description": "meeting notes",
+  "group_id": "my-kb"
+}
+```
+
+**Parameters:** Same as async endpoint above.
+
+**Response:** `201 Created`
+```json
+{
+  "message": "Episode 'Meeting Notes' processed successfully",
+  "episode_uuid": "550e8400-e29b-41d4-a716-446655440000",
+  "success": true
+}
+```
+
+**When to use:**
+- When you need the episode UUID immediately (e.g., for tracking or deletion)
+- When you need confirmation that processing completed successfully
+- For sequential workflows where subsequent operations depend on the episode
+
+**Note:** Episodes are always processed sequentially per `group_id` to maintain temporal consistency, regardless of which endpoint you use.
+
 **Examples:**
 
 ```bash
-# Plain text note
+# Async: Plain text note (fire-and-forget)
 curl -X POST http://localhost:8000/api/v1/memory \
   -H "Content-Type: application/json" \
   -d '{
@@ -80,6 +126,17 @@ curl -X POST http://localhost:8000/api/v1/memory \
     "source": "text",
     "group_id": "project-alpha"
   }'
+
+# Sync: Get episode UUID immediately
+curl -X POST http://localhost:8000/api/v1/memory/sync \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Important Meeting",
+    "episode_body": "Critical decision made about system architecture.",
+    "source": "text",
+    "group_id": "project-alpha"
+  }'
+# Response: {"message": "...", "episode_uuid": "abc-123", "success": true}
 
 # JSON structured data
 curl -X POST http://localhost:8000/api/v1/memory \
@@ -543,11 +600,22 @@ class GraphitiClient:
         name: str,
         episode_body: str,
         source: Literal["text", "json", "message"] = "text",
-        source_description: str = ""
+        source_description: str = "",
+        sync: bool = False
     ):
-        """Add an episode to memory"""
+        """Add an episode to memory
+
+        Args:
+            name: Episode name
+            episode_body: Content of the episode
+            source: Source type ("text", "json", or "message")
+            source_description: Description of the source
+            sync: If True, waits for processing and returns episode UUID
+        """
+        endpoint = "/api/v1/memory/sync" if sync else "/api/v1/memory"
+
         response = requests.post(
-            f"{self.base_url}/api/v1/memory",
+            f"{self.base_url}{endpoint}",
             json={
                 "name": name,
                 "episode_body": episode_body,
@@ -594,13 +662,23 @@ class GraphitiClient:
 # Usage
 client = GraphitiClient(group_id="my-personal-kb")
 
-# Add a note
+# Add a note (async - returns immediately)
 result = client.add_memory(
     name="Meeting with Sarah",
     episode_body="Sarah prefers Python. We decided to use Neo4j for the project.",
     source="text"
 )
-print(result)
+print(result)  # {"message": "Episode queued...", "success": true}
+
+# Add a note (sync - get episode UUID)
+result = client.add_memory(
+    name="Important Decision",
+    episode_body="Final architecture decision made.",
+    source="text",
+    sync=True
+)
+print(result)  # {"message": "...", "episode_uuid": "abc-123", "success": true}
+episode_uuid = result['episode_uuid']
 
 # Search for facts
 facts = client.search_facts("Sarah preferences")
@@ -674,7 +752,25 @@ uv run graphiti_rest_server.py
 
 ### Episode Queue Management
 
-Episodes are processed sequentially per `group_id` to prevent race conditions. You can have multiple groups processing in parallel.
+**Important:** Episodes are processed sequentially per `group_id` to maintain temporal consistency and prevent race conditions. This ensures that episodes are always processed in the order they were received.
+
+**How it works:**
+1. Each `group_id` has its own dedicated queue
+2. Episodes within a group are processed one at a time, in order
+3. Different groups can process episodes in parallel
+4. Both `/memory` (async) and `/memory/sync` use the same queue
+
+**Example:**
+```
+Group "user-1": Episode A → Episode B → Episode C (sequential)
+Group "user-2": Episode X → Episode Y (sequential)
+              ↑ These two groups process in parallel
+```
+
+**Performance implications:**
+- Within a group: Sequential processing ensures correct temporal order
+- Across groups: Parallel processing for better throughput
+- Use different `group_id` values to parallelize independent knowledge graphs
 
 ---
 
@@ -691,7 +787,8 @@ All endpoints return consistent error responses:
 
 HTTP Status Codes:
 - `200 OK` - Success
-- `202 Accepted` - Queued for processing
+- `201 Created` - Resource created successfully (sync endpoint)
+- `202 Accepted` - Queued for processing (async endpoint)
 - `400 Bad Request` - Invalid input
 - `404 Not Found` - Resource not found
 - `500 Internal Server Error` - Server error

@@ -10,7 +10,7 @@ from graphiti_core.nodes import EpisodeType, EpisodicNode
 from graphiti_server.api.deps import get_graphiti_client
 from graphiti_server.config import get_config
 from graphiti_server.core import get_episode_queue
-from graphiti_server.models import AddMemoryRequest, SuccessResponse
+from graphiti_server.models import AddMemoryRequest, AddMemoryResponse, SuccessResponse
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,62 @@ async def add_memory(request: AddMemoryRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error queuing episode: {str(e)}",
+        )
+
+
+@router.post("/memory/sync", status_code=status.HTTP_201_CREATED, response_model=AddMemoryResponse)
+async def add_memory_sync(request: AddMemoryRequest):
+    """Add an episode to memory synchronously and return the episode UUID.
+
+    This endpoint queues the episode for processing (maintaining correct order) and waits
+    for completion before returning. Returns the episode UUID for tracking.
+
+    Use this when you need the episode UUID immediately (e.g., for subsequent operations).
+    For fire-and-forget operations with better throughput, use the async /memory endpoint.
+    """
+    try:
+        client = get_graphiti_client()
+        config = get_config()
+
+        # Map string source to EpisodeType enum
+        source_type = EpisodeType.text
+        if request.source == "message":
+            source_type = EpisodeType.message
+        elif request.source == "json":
+            source_type = EpisodeType.json
+
+        # Use provided group_id or fall back to default
+        group_id = request.group_id or config.default_group_id
+
+        # Get or create episode queue for this group
+        queue = get_episode_queue(group_id)
+
+        # Start worker if not already running
+        if not queue.is_running:
+            await queue.start_worker(lambda: None)
+
+        # Add episode to queue and WAIT for result
+        result = await queue.add_episode(
+            client=client.client,
+            name=request.name,
+            episode_body=request.episode_body,
+            source=source_type,
+            source_description=request.source_description,
+            uuid=request.uuid,
+            use_custom_entities=config.use_custom_entities,
+            wait_for_result=True,  # This makes it synchronous
+        )
+
+        return AddMemoryResponse(
+            message=f"Episode '{request.name}' processed successfully",
+            episode_uuid=result.episode.uuid,
+        )
+
+    except Exception as e:
+        logger.error(f"Error processing episode: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing episode: {str(e)}",
         )
 
 

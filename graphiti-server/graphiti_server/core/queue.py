@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Any, Callable
 
 from graphiti_core.nodes import EpisodeType
 
@@ -35,16 +35,32 @@ class EpisodeQueue:
         """Process episodes from the queue sequentially."""
         try:
             while True:
-                # Get the next episode processing function
-                episode_fn = await self.queue.get()
+                # Get the next episode processing function and optional future
+                item = await self.queue.get()
 
+                if isinstance(item, tuple):
+                    episode_fn, future = item
+                else:
+                    episode_fn = item
+                    future = None
+
+                result = None
+                error = None
                 try:
-                    await episode_fn()
+                    result = await episode_fn()
                 except Exception as e:
+                    error = e
                     logger.error(
                         f"Error processing queued episode for group_id {self.group_id}: {str(e)}"
                     )
                 finally:
+                    # Set future result if provided
+                    if future is not None:
+                        if error:
+                            future.set_exception(error)
+                        else:
+                            future.set_result(result)
+
                     self.queue.task_done()
         except asyncio.CancelledError:
             logger.info(f"Episode queue worker for group_id {self.group_id} was cancelled")
@@ -62,34 +78,55 @@ class EpisodeQueue:
         source_description: str,
         uuid: str | None,
         use_custom_entities: bool,
+        wait_for_result: bool = False,
     ):
-        """Add an episode to the processing queue."""
+        """Add an episode to the processing queue.
+
+        Args:
+            client: Graphiti client instance
+            name: Episode name
+            episode_body: Episode content
+            source: Episode source type
+            source_description: Description of the source
+            uuid: Optional episode UUID
+            use_custom_entities: Whether to use custom entity types
+            wait_for_result: If True, waits for processing and returns the result
+
+        Returns:
+            If wait_for_result is False: Queue position (int)
+            If wait_for_result is True: AddEpisodeResults from graphiti_core
+        """
 
         async def process_episode():
-            try:
-                logger.info(f"Processing queued episode '{name}' for group_id: {self.group_id}")
+            logger.info(f"Processing queued episode '{name}' for group_id: {self.group_id}")
 
-                # Use custom entity types if enabled
-                entity_types = ENTITY_TYPES if use_custom_entities else {}
+            # Use custom entity types if enabled
+            entity_types = ENTITY_TYPES if use_custom_entities else {}
 
-                await client.add_episode(
-                    name=name,
-                    episode_body=episode_body,
-                    source=source,
-                    source_description=source_description,
-                    group_id=self.group_id,
-                    uuid=uuid,
-                    reference_time=datetime.now(timezone.utc),
-                    entity_types=entity_types,
-                )
-                logger.info(f"Episode '{name}' processed successfully")
-            except Exception as e:
-                logger.error(
-                    f"Error processing episode '{name}' for group_id {self.group_id}: {str(e)}"
-                )
+            result = await client.add_episode(
+                name=name,
+                episode_body=episode_body,
+                source=source,
+                source_description=source_description,
+                group_id=self.group_id,
+                uuid=uuid,
+                reference_time=datetime.now(timezone.utc),
+                entity_types=entity_types,
+            )
+            logger.info(f"Episode '{name}' processed successfully")
+            return result
 
-        await self.queue.put(process_episode)
-        return self.queue.qsize()
+        if wait_for_result:
+            # Create a future to wait for the result
+            future: asyncio.Future[Any] = asyncio.Future()
+            await self.queue.put((process_episode, future))
+
+            # Wait for the worker to process this episode and return the result
+            return await future
+        else:
+            # Fire-and-forget: just add to queue
+            await self.queue.put(process_episode)
+            return self.queue.qsize()
 
     async def stop(self):
         """Stop the queue worker."""
